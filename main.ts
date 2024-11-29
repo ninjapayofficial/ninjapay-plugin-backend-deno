@@ -1,26 +1,12 @@
 // main.ts
-import express from "npm:express";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import fs from "node:fs";
-import fsPromises from "node:fs/promises";
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
-const execAsync = promisify(exec); // Define execAsync here
+import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
+import { renderFileToString } from "https://deno.land/x/dejs@0.10.3/mod.ts";
+import { exists } from "https://deno.land/std@0.185.0/fs/mod.ts";
 
-const app = express();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Middleware to parse URL-encoded data
-app.use(express.urlencoded({ extended: true }));
-
-// Set the views directory and the view engine to EJS
-app.set("views", path.join(__dirname, "views"));
-app.set("view engine", "ejs");
-
-// Function to extract repository name from Git URL
+// Helper function to extract repository name from Git URL
 function getRepoName(gitUrl: string): string {
   const match = gitUrl.match(/\/([^\/]+?)(?:\.git)?$/);
   if (match) {
@@ -30,74 +16,112 @@ function getRepoName(gitUrl: string): string {
   }
 }
 
-// Route for the main page
-app.get("/", async (req: any, res: { render: (arg0: string, arg1: { plugins: string[]; }) => void; }) => {
-  const pluginsDir = path.join(__dirname, "plugins");
-  let plugins: string[] = [];
+// Function to handle HTTP requests
+async function handler(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const pathname = url.pathname;
 
-  try {
-    const dirEntries = await fsPromises.readdir(pluginsDir, { withFileTypes: true });
-    plugins = dirEntries
-      .filter((entry: { isDirectory: () => any; }) => entry.isDirectory())
-      .map((entry: { name: any; }) => entry.name);
-  } catch (e: any) {
-    if (e.code === "ENOENT") {
-      await fsPromises.mkdir(pluginsDir);
-    } else {
-      throw e;
-    }
-  }
+  if (req.method === "GET" && pathname === "/") {
+    // Serve the main page
+    const pluginsDir = "./plugins";
+    let plugins: string[] = [];
 
-  res.render("index", { plugins });
-});
-
-// Route to handle plugin installation
-app.post("/install", async (req: { body: { gitUrl: any; }; }, res: { status: (arg0: number) => { (): any; new(): any; send: { (arg0: string): void; new(): any; }; }; redirect: (arg0: string) => void; }) => {
-  const gitUrl = req.body.gitUrl;
-
-  if (!gitUrl) {
-    res.status(400).send("Git URL is required");
-    return;
-  }
-
-  let repoName;
-  try {
-    repoName = getRepoName(gitUrl);
-  } catch (e: any) {
-    res.status(400).send("Invalid Git URL");   
-    return;
-  }
-
-  const pluginsDir = path.join(__dirname, "plugins");
-  const pluginPath = path.join(pluginsDir, repoName);
-
-  try {
-    // Check if the plugin directory already exists
-    if (fs.existsSync(pluginPath)) {
-      // Remove the existing directory
-      await fsPromises.rm(pluginPath, { recursive: true, force: true });
+    try {
+      for await (const dirEntry of Deno.readDir(pluginsDir)) {
+        if (dirEntry.isDirectory) {
+          plugins.push(dirEntry.name);
+        }
+      }
+    } catch (e: any) {
+      if (e instanceof Deno.errors.NotFound) {
+        await Deno.mkdir(pluginsDir);
+      } else {
+        throw e;
+      }
     }
 
-    // Clone the repository
-    await execAsync(`git clone ${gitUrl} ${pluginPath}`);
+    const body = await renderFileToString(`${Deno.cwd()}/views/index.ejs`, {
+      plugins,
+    });
 
-    // Run migrations if migrate.ts exists
-    const migrateFile = path.join(pluginPath, "migrate.ts");
-    if (fs.existsSync(migrateFile)) {
-      await execAsync(`deno run --allow-read --allow-write ${migrateFile}`);
-    } else {
-      console.warn(`Migration file not found at ${migrateFile}`);
-      // Optionally handle the absence of migrate.ts
+    return new Response(body, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  } else if (req.method === "POST" && pathname === "/install") {
+    // Handle plugin installation
+    const formData = await req.formData();
+    const gitUrl = formData.get("gitUrl")?.toString();
+
+    if (!gitUrl) {
+      return new Response("Git URL is required", { status: 400 });
     }
 
-    res.redirect("/");
-  } catch (e: any) {
-    console.error("Error installing plugin:", e);
-    res.status(500).send(`Failed to install plugin: ${e.message}`);
-  }
-});
+    let repoName;
+    try {
+      repoName = getRepoName(gitUrl);
+    } catch (e: any) {
+      return new Response("Invalid Git URL", { status: 400 });
+    }
 
-const PORT = 8000;
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+    const pluginsDir = "./plugins";
+    const pluginPath = `${pluginsDir}/${repoName}`;
+
+    try {
+      // Check if the plugin directory already exists
+      if (await exists(pluginPath)) {
+        // Remove the existing directory
+        await Deno.remove(pluginPath, { recursive: true });
+      }
+
+      // Use Deno.Command to clone the repository
+      const gitCloneCommand = new Deno.Command("git", {
+        args: ["clone", gitUrl, pluginPath],
+        stdout: "null",
+        stderr: "piped",
+      });
+
+      const { code, stderr } = await gitCloneCommand.output();
+      const errorString = decoder.decode(stderr);
+
+      if (code !== 0) {
+        return new Response(`Failed to clone repository: ${errorString}`, {
+          status: 500,
+        });
+      }
+
+      // Run migrations if migrate.ts exists
+      const migrateFile = `${pluginPath}/migrate.ts`;
+      if (await exists(migrateFile)) {
+        // Use Deno.Command to run the migration script
+        const denoRunCommand = new Deno.Command("deno", {
+          args: ["run", "--allow-run", "--allow-read", "--allow-write",  migrateFile],
+          stdout: "null",
+          stderr: "piped",
+        });
+
+        const { code, stderr } = await denoRunCommand.output();
+        const errorString = decoder.decode(stderr);
+
+        if (code !== 0) {
+          console.error("Error running migrations:", errorString);
+        }
+      } else {
+        console.warn(`Migration file not found at ${migrateFile}`);
+      }
+
+      // Redirect back to the main page
+      return Response.redirect("/", 303);
+    } catch (e: any) {
+      console.error("Error installing plugin:", e);
+      return new Response(`Failed to install plugin: ${e.message}`, {
+        status: 500,
+      });
+    }
+  } else {
+    return new Response("Not Found", { status: 404 });
+  }
+}
+
+// Start the server
+console.log("Server is running on http://localhost:8000");
+serve(handler, { port: 8000 });
