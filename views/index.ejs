@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Deno Plugin Manager</title>
+</head>
+<body>
+  <h1>Deno Plugin Manager</h1>
+  <form action="/install" method="post">
+    <label for="gitUrl">Git URL:</label>
+    <input type="text" id="gitUrl" name="gitUrl" required>
+    <button type="submit">Install Plugin</button>
+  </form>
+  <h2>Installed Plugins:</h2>
+  <ul>
+    <% plugins.forEach(function(plugin) { %>
+      <li><%= plugin %></li>
+    <% }); %>
+  </ul>
+</body>
+</html>
