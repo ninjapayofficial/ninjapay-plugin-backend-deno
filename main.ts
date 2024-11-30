@@ -5,6 +5,10 @@ const decoder = new TextDecoder();
 import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
 import { renderFileToString } from "https://deno.land/x/dejs@0.10.3/mod.ts";
 import { exists } from "https://deno.land/std@0.185.0/fs/mod.ts";
+import { config } from "dotenv";
+import { getCookies, setCookie, deleteCookie, } from "https://deno.land/std@0.185.0/http/cookie.ts";
+
+config(); // Load environment variables from .env
 
 // Helper function to extract repository name from Git URL
 function getRepoName(gitUrl: string): string {
@@ -20,6 +24,23 @@ function getRepoName(gitUrl: string): string {
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const pathname = url.pathname;
+
+  // Parse cookies from the request
+  const cookies = getCookies(req.headers);
+  const token = cookies.token;
+
+  // Define protected routes
+  const protectedRoutes = ["/", "/install"];
+
+  if (protectedRoutes.includes(pathname)) {
+    // Check if the user is authenticated
+    if (!token) {
+      // Redirect to login page
+      // Construct absolute URL for redirection
+      const redirectUrl = new URL("/login", req.url).toString();
+      return Response.redirect(redirectUrl, 302);
+    }
+  }
 
   if (req.method === "GET" && pathname === "/") {
     // Serve the main page
@@ -94,7 +115,7 @@ async function handler(req: Request): Promise<Response> {
       if (await exists(migrateFile)) {
         // Use Deno.Command to run the migration script
         const denoRunCommand = new Deno.Command("deno", {
-          args: ["run", "--allow-run", "--allow-read", "--allow-write",  migrateFile],
+          args: ["run", "--allow-read", "--allow-write", migrateFile],
           stdout: "null",
           stderr: "piped",
         });
@@ -117,6 +138,117 @@ async function handler(req: Request): Promise<Response> {
         status: 500,
       });
     }
+  } else if (req.method === "GET" && pathname === "/signup") {
+    // Serve the signup page
+    const body = await renderFileToString(`${Deno.cwd()}/views/signup.ejs`, {});
+    return new Response(body, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  } else if (req.method === "POST" && pathname === "/signup") {
+    // Handle user signup
+    const formData = await req.formData();
+    const email = formData.get("email")?.toString();
+    const password = formData.get("password")?.toString();
+
+    if (!email || !password) {
+      return new Response("Email and password are required", { status: 400 });
+    }
+
+    // Firebase Signup API Endpoint
+    const apiKey = Deno.env.get("API_KEY");
+    const signUpUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
+
+    const response = await fetch(signUpUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        returnSecureToken: true,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return new Response(`Signup failed: ${data.error.message}`, { status: 400 });
+    }
+
+    // Set auth token in cookies
+    const headers = new Headers();
+    setCookie(headers, {
+      name: "token",
+      value: data.idToken,
+      httpOnly: true,
+      sameSite: "Lax",
+    });
+
+    headers.set("Location", "/");
+    return new Response(null, {
+      status: 302,
+      headers,
+    });
+  } else if (req.method === "GET" && pathname === "/login") {
+    // Serve the login page
+    const body = await renderFileToString(`${Deno.cwd()}/views/login.ejs`, {});
+    return new Response(body, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  } else if (req.method === "POST" && pathname === "/login") {
+    // Handle user login / // ... after successful login ...
+    const formData = await req.formData();
+    const email = formData.get("email")?.toString();
+    const password = formData.get("password")?.toString();
+
+    if (!email || !password) {
+      return new Response("Email and password are required", { status: 400 });
+    }
+
+    // Firebase Login API Endpoint
+    const apiKey = Deno.env.get("API_KEY");
+    const signInUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
+
+    const response = await fetch(signInUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        returnSecureToken: true,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return new Response(`Login failed: ${data.error.message}`, { status: 400 });
+    }
+
+    // Set auth token in cookies
+    const headers = new Headers();
+    setCookie(headers, {
+      name: "token",
+      value: data.idToken,
+      httpOnly: true,
+      sameSite: "Lax",
+    });
+    
+    const redirectUrl = new URL("/", req.url).toString();
+    headers.set("Location", redirectUrl);
+    return new Response(null, {
+      status: 302,
+      headers,
+    });
+  } else if (req.method === "GET" && pathname === "/logout") {
+    // Handle user logout
+    const headers = new Headers();
+    deleteCookie(headers, "token");
+    const redirectUrl = new URL("/login", req.url).toString();
+    headers.set("Location", redirectUrl);
+    return new Response(null, {
+      status: 302,
+      headers,
+    });
   } else {
     return new Response("Not Found", { status: 404 });
   }

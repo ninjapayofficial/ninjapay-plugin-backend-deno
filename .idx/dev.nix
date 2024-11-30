@@ -2,7 +2,7 @@
 # see: https://developers.google.com/idx/guides/customize-idx-env
 { pkgs, ... }: {
   # Which nixpkgs channel to use.
-  channel = "unstable"; # or "unstable"
+  channel = "unstable"; # or "unstable" or stable-24.05
   # Use https://search.nixos.org/packages to find packages
   packages = [
     pkgs.deno
