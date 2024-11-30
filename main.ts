@@ -131,7 +131,8 @@ async function handler(req: Request): Promise<Response> {
       }
 
       // Redirect back to the main page
-      return Response.redirect("/", 303);
+      const redirectUrl = new URL("/", req.url).toString();
+      return Response.redirect(redirectUrl, 303);
     } catch (e: any) {
       console.error("Error installing plugin:", e);
       return new Response(`Failed to install plugin: ${e.message}`, {
