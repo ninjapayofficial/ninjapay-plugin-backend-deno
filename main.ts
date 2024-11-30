@@ -10,7 +10,7 @@ import {
   deleteCookie,
   getCookies,
   setCookie,
-} from "https://deno.land/std@0.185.0/http/cookie.ts";
+} from "https://deno.land/std@0.224.0/http/cookie.ts";
 
 config(); // Load environment variables from .env
 
