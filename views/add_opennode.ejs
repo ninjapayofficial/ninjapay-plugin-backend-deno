@@ -1,0 +1,17 @@
+<!-- views/add_opennode.ejs -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Add OpenNode Provider</title>
+</head>
+<body>
+  <h1>Add OpenNode Provider</h1>
+  <form action="/add-funding/opennode" method="post">
+    <label for="invoiceKey">Invoice Key:</label>
+    <input type="text" id="invoiceKey" name="invoiceKey" required><br><br>
+    <label for="readApiKey">Read API Key:</label>
+    <input type="text" id="readApiKey" name="readApiKey" required><br><br>
+    <button type="submit">Add Provider</button>
+  </form>
+</body>
+</html>
