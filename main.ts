@@ -12,42 +12,29 @@ import {
   deleteCookie,
 } from "https://deno.land/std@0.224.0/http/cookie.ts";
 // Firebase Admin SDK for Deno
-import { initializeApp, cert, ServiceAccount } from "https://esm.sh/firebase-admin@11.5.0/app";
-import { getAuth } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-firestore.js";
+// import { initializeApp, cert, ServiceAccount } from "https://esm.sh/firebase-admin@11.5.0/app";
+// import { getAuth } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+// import { getFirestore } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-firestore.js";
 // import { initializeApp, cert, getAuth, getFirestore } from "https://deno.land/x/firebase_adminsdk@v0.5.0/mod.ts";
 // import firebase from "https://esm.sh/firebase@9.17.0/app";
-// import * as firebase from 'firebase';
-// import "https://esm.sh/firebase@9.17.0/auth";
-// import "https://esm.sh/firebase@9.17.0/firestore";
-// const admin = require("./firebase.ts");
 import admin from './firebase.ts';
 // Load environment variables from .env
 config();
 
-// firebase.initializeApp({
-//   apiKey: Deno.env.get("API_KEY"),
-//   authDomain: Deno.env.get("AUTH_DOMAIN"),
-//   projectId: Deno.env.get("FIREBASE_PROJECT_ID"),
-// })
-
 // Initialize Firebase Admin SDK
-const serviceAccount = {
-  projectId: Deno.env.get("FIREBASE_PROJECT_ID"),
-  clientEmail: Deno.env.get("FIREBASE_CLIENT_EMAIL"),
-  privateKey: Deno.env.get("FIREBASE_PRIVATE_KEY")?.replace(/\\n/g, "\n"),
-};
-// import serviceAccount from './ninjapay-plugin-backend-dev-firebase-adminsdk-oiyn8-3f93833a6b.json' with { type: "json" }; // Replace with the path to your service account key
-// const { project_id, private_key_id, private_key, client_email, client_id, auth_uri, token_uri, auth_provider_x509_cert_url, client_x509_cert_url } = serviceAccount;
-initializeApp({
-  credential: cert(serviceAccount),
-});
+// const serviceAccount = {
+//   projectId: Deno.env.get("FIREBASE_PROJECT_ID"),
+//   clientEmail: Deno.env.get("FIREBASE_CLIENT_EMAIL"),
+//   privateKey: Deno.env.get("FIREBASE_PRIVATE_KEY")?.replace(/\\n/g, "\n"),
+// };
+// // import serviceAccount from './ninjapay-plugin-backend-dev-firebase-adminsdk-oiyn8-3f93833a6b.json' with { type: "json" }; // Replace with the path to your service account key
+// // const { project_id, private_key_id, private_key, client_email, client_id, auth_uri, token_uri, auth_provider_x509_cert_url, client_x509_cert_url } = serviceAccount;
+// initializeApp({
+//   credential: cert(serviceAccount),
+// });
 
 
-// const auth = getAuth();
 const auth = admin.auth();
-// const db = admin.firestore();
-// const db = getFirestore();
 const db = admin.firestore();
 
 // Helper function to extract repository name from Git URL
