@@ -1,12 +1,16 @@
 // main.ts
-const encoder = new TextEncoder();
+const _encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
 import { renderFileToString } from "https://deno.land/x/dejs@0.10.3/mod.ts";
 import { exists } from "https://deno.land/std@0.185.0/fs/mod.ts";
 import { config } from "dotenv";
-import { getCookies, setCookie, deleteCookie, } from "https://deno.land/std@0.185.0/http/cookie.ts";
+import {
+  deleteCookie,
+  getCookies,
+  setCookie,
+} from "https://deno.land/std@0.185.0/http/cookie.ts";
 
 config(); // Load environment variables from .env
 
@@ -45,7 +49,7 @@ async function handler(req: Request): Promise<Response> {
   if (req.method === "GET" && pathname === "/") {
     // Serve the main page
     const pluginsDir = "./plugins";
-    let plugins: string[] = [];
+    const plugins: string[] = [];
 
     try {
       for await (const dirEntry of Deno.readDir(pluginsDir)) {
@@ -53,7 +57,7 @@ async function handler(req: Request): Promise<Response> {
           plugins.push(dirEntry.name);
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (e instanceof Deno.errors.NotFound) {
         await Deno.mkdir(pluginsDir);
       } else {
@@ -80,8 +84,8 @@ async function handler(req: Request): Promise<Response> {
     let repoName;
     try {
       repoName = getRepoName(gitUrl);
-    } catch (e: any) {
-      return new Response("Invalid Git URL", { status: 400 });
+    } catch (e: unknown) {
+      return new Response(`"Invalid Git URL:" ${e}`, { status: 400 });
     }
 
     const pluginsDir = "./plugins";
@@ -133,9 +137,9 @@ async function handler(req: Request): Promise<Response> {
       // Redirect back to the main page
       const redirectUrl = new URL("/", req.url).toString();
       return Response.redirect(redirectUrl, 303);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Error installing plugin:", e);
-      return new Response(`Failed to install plugin: ${e.message}`, {
+      return new Response(`Failed to install plugin: ${e}`, {
         status: 500,
       });
     }
@@ -157,7 +161,8 @@ async function handler(req: Request): Promise<Response> {
 
     // Firebase Signup API Endpoint
     const apiKey = Deno.env.get("API_KEY");
-    const signUpUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
+    const signUpUrl =
+      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
 
     const response = await fetch(signUpUrl, {
       method: "POST",
@@ -172,7 +177,9 @@ async function handler(req: Request): Promise<Response> {
     const data = await response.json();
 
     if (!response.ok) {
-      return new Response(`Signup failed: ${data.error.message}`, { status: 400 });
+      return new Response(`Signup failed: ${data.error.message}`, {
+        status: 400,
+      });
     }
 
     // Set auth token in cookies
@@ -207,7 +214,8 @@ async function handler(req: Request): Promise<Response> {
 
     // Firebase Login API Endpoint
     const apiKey = Deno.env.get("API_KEY");
-    const signInUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
+    const signInUrl =
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
 
     const response = await fetch(signInUrl, {
       method: "POST",
@@ -222,7 +230,9 @@ async function handler(req: Request): Promise<Response> {
     const data = await response.json();
 
     if (!response.ok) {
-      return new Response(`Login failed: ${data.error.message}`, { status: 400 });
+      return new Response(`Login failed: ${data.error.message}`, {
+        status: 400,
+      });
     }
 
     // Set auth token in cookies
@@ -233,7 +243,7 @@ async function handler(req: Request): Promise<Response> {
       httpOnly: true,
       sameSite: "Lax",
     });
-    
+
     const redirectUrl = new URL("/", req.url).toString();
     headers.set("Location", redirectUrl);
     return new Response(null, {
