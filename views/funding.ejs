@@ -1,0 +1,33 @@
+<!-- views/funding.ejs -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Funding Providers</title>
+</head>
+<body>
+  <h1>Funding Providers</h1>
+  <p><a href="/logout">Logout</a></p>
+  <h2>Connected Providers:</h2>
+  <ul>
+    <% for (const [index, provider] of fundingProviders.entries()) { %>
+      <li>
+        <strong>Provider:</strong> <%= provider.provider %><br>
+        <% if (provider.provider === 'lnbits') { %>
+          Instance URL: <%= provider.instanceUrl %><br>
+        <% } %>
+        Provider Invoice Key: <%= provider.providerInvoiceKey %><br>
+        Provider Admin Key: <%= provider.providerAdminKey %><br>
+        <% if (defaultProvider === provider.provider) { %>
+          <em>Default Provider</em>
+        <% } else { %>
+          <form action="/set-default-provider" method="post" style="display:inline;">
+            <input type="hidden" name="providerIndex" value="<%= index %>">
+            <button type="submit">Set as Default</button>
+          </form>
+        <% } %>
+      </li>
+    <% } %>
+  </ul>
+  <p><a href="/add-funding">Add Funding Provider</a></p>
+</body>
+</html>

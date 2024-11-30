@@ -2,7 +2,8 @@
   "imports": {
     "dotenv": "npm:dotenv@16.3.1",
     "express": "npm:express@4.21.1",
-    "ejs": "npm:ejs@3.1.10"
+    "ejs": "npm:ejs@3.1.10",
+    "firebase-admin": "npm:firebase-admin@12.7.0"
   },
   "permissions": {
     "read": true,

@@ -1,0 +1,19 @@
+<!-- views/add_lnbits.ejs -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Add LNbits Provider</title>
+</head>
+<body>
+  <h1>Add LNbits Provider</h1>
+  <form action="/add-funding/lnbits" method="post">
+    <label for="instanceUrl">Instance URL:</label>
+    <input type="url" id="instanceUrl" name="instanceUrl" required><br><br>
+    <label for="invoiceKey">Invoice Key:</label>
+    <input type="text" id="invoiceKey" name="invoiceKey" required><br><br>
+    <label for="adminKey">Admin Key:</label>
+    <input type="text" id="adminKey" name="adminKey" required><br><br>
+    <button type="submit">Add Provider</button>
+  </form>
+</body>
+</html>
