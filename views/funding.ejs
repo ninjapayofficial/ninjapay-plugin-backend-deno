@@ -136,6 +136,46 @@
             color: #21728D;
         }
 
+        /* Top Box (Provider Tabs) */
+        .tabs-bg {
+            background-color: #F9FBFC;
+            margin-left: -40px;
+            margin-top: -20px;
+            margin-right: -20px;
+            margin-bottom: 20px;
+            display: flex;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .tabs {
+            margin-bottom: 20px;
+            margin-top: 20px;
+            margin-left: 40px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .tabs .tab-item {
+            padding: 10px 20px;
+            border-radius: 40px;
+            border: none;
+            cursor: pointer;
+            background-color: #F9FBFC;
+            color: black;
+            font-weight: 500;
+            transition: background-color 0.3s, box-shadow 0.3s;
+        }
+
+        .tabs .tab-item.active {
+            background-color: #EFF0F5;
+            box-shadow: inset 4px 4px 6px -1px rgba(0, 0, 0, 0.2),
+                inset -4px -4px 6px -1px rgba(255, 255, 255, 0.7),
+                -0.5px -0.5px 0px #C3D6ED,
+                0.5px 0.5px 0px rgba(0, 0, 0, 0.15),
+                0px 12px 10px -10px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .sidebar {
@@ -145,6 +185,15 @@
             }
 
             .content {
+                margin-left: 0;
+            }
+
+            .tabs-bg {
+                margin-left: 0;
+                margin-right: 0;
+            }
+
+            .tabs {
                 margin-left: 0;
             }
         }
@@ -173,6 +222,18 @@
     <div class="content">
         <!-- Logout Button -->
         <button class="logout-btn" onclick="logout()"><i class="fas fa-sign-out-alt"></i></button>
+
+        <!-- Provider Tabs -->
+        <div class="tabs-bg">
+            <div class="tabs">
+                <% fundingProviders.forEach((provider) => { %>
+                    <button class="tab-item <%= defaultProvider === provider.provider ? 'active' : '' %>" onclick="switchTab('<%= provider.provider %>')">
+                        <%= provider.provider.charAt(0).toUpperCase() + provider.provider.slice(1) %> ⚡
+                    </button>
+                <% }); %>
+                <button class="tab-item" onclick="addNewProvider()">ADD +</button>
+            </div>
+        </div>
 
         <!-- Funding Providers Section -->
         <div class="provider-section">
@@ -365,6 +426,47 @@
             mainContent.appendChild(iframe);
         }
 
+        // Function to switch between providers via tabs
+        async function switchTab(providerName) {
+            try {
+                const response = await fetch('/set-default-provider', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ provider: providerName }),
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Failed to set default provider');
+                }
+
+                // Update the active tab
+                const tabs = document.querySelectorAll('.tab-item');
+                tabs.forEach(tab => {
+                    if (tab.textContent.toLowerCase().includes(providerName.toLowerCase())) {
+                        tab.classList.add('active');
+                    } else {
+                        tab.classList.remove('active');
+                    }
+                });
+
+                // Reload balance and transactions based on new default provider
+                loadBalance(providerName);
+                loadTransactions(providerName);
+            } catch (error) {
+                console.error('Error switching provider:', error);
+                document.getElementById('providerError').textContent = error.message;
+            }
+        }
+
+        // Function to add a new provider
+        function addNewProvider() {
+            window.location.href = '/add-funding';
+        }
+
         // Function to open the action modal
         function openModal(action) {
             const modal = new bootstrap.Modal(document.getElementById('actionModal'));
@@ -470,11 +572,10 @@
                 const response = await fetch('/set-default-provider', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
+                        'Content-Type': 'application/json'
                     },
-                    body: new URLSearchParams({
-                        provider
-                    })
+                    body: JSON.stringify({ provider }),
+                    credentials: 'include'
                 });
                 if (!response.ok) {
                     const errorText = await response.text();
@@ -489,9 +590,40 @@
             }
         }
 
-        // Function to add a new provider
-        function addNewProvider() {
-            window.location.href = '/add-funding';
+        // Function to set the default provider from the top tabs
+        async function setDefaultProviderFromTab(providerName) {
+            try {
+                const response = await fetch('/set-default-provider', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ provider: providerName }),
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Failed to set default provider');
+                }
+
+                // Update the active tab
+                const tabs = document.querySelectorAll('.tab-item');
+                tabs.forEach(tab => {
+                    if (tab.textContent.toLowerCase().includes(providerName.toLowerCase())) {
+                        tab.classList.add('active');
+                    } else {
+                        tab.classList.remove('active');
+                    }
+                });
+
+                // Reload balance and transactions based on new default provider
+                loadBalance(providerName);
+                loadTransactions(providerName);
+            } catch (error) {
+                console.error('Error switching provider:', error);
+                document.getElementById('providerError').textContent = error.message;
+            }
         }
 
         // Function to copy the invoice to clipboard
@@ -528,9 +660,9 @@
         }
 
         // Function to load transactions
-        async function loadTransactions() {
+        async function loadTransactions(provider) {
             try {
-                const response = await fetch('/transactions', {
+                const response = await fetch(`/transactions?provider=${provider}`, {
                     method: 'GET',
                     credentials: 'include'
                 });
@@ -548,27 +680,27 @@
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
                             <td>${index + 1}</td>
-                            <td>${new Date(tx.createdAt).toLocaleString()}</td>
-                            <td>${tx.amount}</td>
-                            <td>${tx.memo || 'N/A'}</td>
-                            <td>${tx.payment_hash}</td>
-                            <td>${tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}</td>
+                            <td>${tx.createdAt ? new Date(tx.createdAt).toLocaleString() : 'N/A'}</td>
+                            <td>${tx.amount !== null ? tx.amount + ' ' + tx.currency : 'N/A'}</td>
+                            <td>${tx.description || 'N/A'}</td>
+                            <td>${tx.txid || 'N/A'}</td>
                         `;
                         tbody.appendChild(tr);
                     });
                 }
+                document.getElementById('transactionsError').textContent = '';
             } catch (error) {
                 console.error('Error loading transactions:', error);
                 const transactionsError = document.getElementById('transactionsError');
                 transactionsError.textContent = error.message;
+                document.querySelector('.transaction-table tbody').innerHTML = `<tr><td colspan="6">Error loading transactions</td></tr>`;
             }
         }
 
         // Function to load balance
-        async function loadBalance() {
+        async function loadBalance(provider) {
             try {
-                const response = await fetch('/balance', {
-                    method: 'GET',
+                const response = await fetch(`/balance?provider=${provider}`, {
                     credentials: 'include'
                 });
                 if (!response.ok) {
@@ -576,19 +708,24 @@
                     throw new Error(errorText || 'Failed to load balance');
                 }
                 const data = await response.json();
-                // Update UI with balance information if needed
-                console.log('Balance:', data);
-                // Optionally, display balance in the UI
+                document.getElementById('balanceAmount').textContent = `${data.balance || 0} ${data.currency}`;
+                document.getElementById('withdrawableAmount').textContent = `Available to withdraw: ₹${data.withdrawable || 0}`;
+                document.getElementById('balanceError').textContent = '';
             } catch (error) {
                 console.error('Error loading balance:', error);
-                // Handle balance errors if necessary
+                document.getElementById('balanceError').textContent = error.message;
+                document.getElementById('balanceAmount').textContent = 'Error loading balance';
             }
         }
 
-        // Initialize by loading transactions and balance
+        // Initialize by loading balance and transactions based on default provider
         document.addEventListener('DOMContentLoaded', () => {
-            loadTransactions();
-            loadBalance();
+            // The backend should pass the defaultProvider; ensure it's set correctly
+            const defaultProvider = '<%= defaultProvider %>';
+            if (defaultProvider) {
+                loadBalance(defaultProvider);
+                loadTransactions(defaultProvider);
+            }
         });
     </script>
 </body>
