@@ -13,9 +13,13 @@ import {
 } from "https://deno.land/std@0.224.0/http/cookie.ts";
 
 import admin from "./firebase.ts";
+// import auth from "./firebase.ts";
+// import db from "./firebase.ts";
+import { LNbitsPaymentService } from "./services/lnbitsPaymentService.ts";
+import { OpenNodePaymentService } from "./services/opennodePaymentService.ts";
+
 // Load environment variables from .env
 config();
-
 
 const auth = admin.auth();
 const db = admin.firestore();
@@ -60,6 +64,11 @@ async function handler(req: Request): Promise<Response> {
     "/add-funding/lnbits",
     "/add-funding/opennode",
     "/set-default-provider",
+    "/createPayLink",
+    "/balance",
+    "/payInvoice",
+    "/transactions",
+    "/checkStatus",
   ];
 
   // Initialize UID
@@ -513,8 +522,271 @@ async function handler(req: Request): Promise<Response> {
       console.error("Error setting default provider:", e);
       return new Response("Failed to set default provider", { status: 500 });
     }
+  }
+
+  // Payment Endpoints
+  else if (req.method === "POST" && pathname === "/createPayLink") {
+    return await handleCreatePayLink(req, uid);
+  } else if (req.method === "GET" && pathname === "/balance") {
+    return await handleGetBalance(req, uid);
+  } else if (req.method === "POST" && pathname === "/payInvoice") {
+    return await handlePayInvoice(req, uid);
+  } else if (req.method === "GET" && pathname === "/transactions") {
+    return await handleGetTransactions(req, uid);
+  } else if (req.method === "GET" && pathname === "/checkStatus") {
+    return await handleCheckStatus(req, uid);
   } else {
     return new Response("Not Found", { status: 404 });
+  }
+}
+
+// Payment Handlers
+
+async function handleCreatePayLink(req: Request, uid: string): Promise<Response> {
+  try {
+    const formData = await req.formData();
+    const amountStr = formData.get("amount")?.toString();
+    const memo = formData.get("memo")?.toString() || "";
+
+    const amount = parseFloat(amountStr || "0");
+    if (isNaN(amount) || amount <= 0) {
+      return new Response("Invalid amount", { status: 400 });
+    }
+
+    // Fetch user's default provider
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    const defaultProvider = userData?.defaultProvider;
+    const fundingProviders = userData?.fundingProviders || [];
+
+    if (!defaultProvider) {
+      return new Response("No default provider set", { status: 400 });
+    }
+
+    // Find the default provider details
+    const provider = fundingProviders.find(
+      (p: any) => p.provider === defaultProvider,
+    );
+
+    if (!provider) {
+      return new Response("Default provider not found", { status: 400 });
+    }
+
+    // Initialize the appropriate payment service
+    let paymentService: any;
+    if (defaultProvider === "lnbits") {
+      paymentService = new LNbitsPaymentService(provider);
+    } else if (defaultProvider === "opennode") {
+      paymentService = new OpenNodePaymentService(provider);
+    } else {
+      return new Response("Unsupported provider", { status: 400 });
+    }
+
+    // Create payment link
+    const payLink = await paymentService.createPayLink(amount, memo);
+
+    return new Response(JSON.stringify(payLink), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (e: unknown) {
+    console.error("Error creating payment link:", e);
+    return new Response("Failed to create payment link", { status: 500 });
+  }
+}
+
+async function handleGetBalance(req: Request, uid: string): Promise<Response> {
+  try {
+    // Fetch user's default provider
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    const defaultProvider = userData?.defaultProvider;
+    const fundingProviders = userData?.fundingProviders || [];
+
+    if (!defaultProvider) {
+      return new Response("No default provider set", { status: 400 });
+    }
+
+    // Find the default provider details
+    const provider = fundingProviders.find(
+      (p: any) => p.provider === defaultProvider,
+    );
+
+    if (!provider) {
+      return new Response("Default provider not found", { status: 400 });
+    }
+
+    // Initialize the appropriate payment service
+    let paymentService: any;
+    if (defaultProvider === "lnbits") {
+      paymentService = new LNbitsPaymentService(provider);
+    } else if (defaultProvider === "opennode") {
+      paymentService = new OpenNodePaymentService(provider);
+    } else {
+      return new Response("Unsupported provider", { status: 400 });
+    }
+
+    // Get balance
+    const balance = await paymentService.getBalance();
+
+    return new Response(JSON.stringify(balance), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (e: unknown) {
+    console.error("Error fetching balance:", e);
+    return new Response("Failed to fetch balance", { status: 500 });
+  }
+}
+
+async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
+  try {
+    const formData = await req.formData();
+    const paymentRequest = formData.get("paymentRequest")?.toString();
+
+    if (!paymentRequest) {
+      return new Response("Payment request is required", { status: 400 });
+    }
+
+    // Fetch user's default provider
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    const defaultProvider = userData?.defaultProvider;
+    const fundingProviders = userData?.fundingProviders || [];
+
+    if (!defaultProvider) {
+      return new Response("No default provider set", { status: 400 });
+    }
+
+    // Find the default provider details
+    const provider = fundingProviders.find(
+      (p: any) => p.provider === defaultProvider,
+    );
+
+    if (!provider) {
+      return new Response("Default provider not found", { status: 400 });
+    }
+
+    // Initialize the appropriate payment service
+    let paymentService: any;
+    if (defaultProvider === "lnbits") {
+      paymentService = new LNbitsPaymentService(provider);
+    } else if (defaultProvider === "opennode") {
+      paymentService = new OpenNodePaymentService(provider);
+    } else {
+      return new Response("Unsupported provider", { status: 400 });
+    }
+
+    // Pay the invoice
+    const payResponse = await paymentService.payInvoice(paymentRequest);
+
+    return new Response(JSON.stringify(payResponse), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (e: unknown) {
+    console.error("Error paying invoice:", e);
+    return new Response("Failed to pay invoice", { status: 500 });
+  }
+}
+
+async function handleGetTransactions(req: Request, uid: string): Promise<Response> {
+  try {
+    // Fetch user's default provider
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    const defaultProvider = userData?.defaultProvider;
+    const fundingProviders = userData?.fundingProviders || [];
+
+    if (!defaultProvider) {
+      return new Response("No default provider set", { status: 400 });
+    }
+
+    // Find the default provider details
+    const provider = fundingProviders.find(
+      (p: any) => p.provider === defaultProvider,
+    );
+
+    if (!provider) {
+      return new Response("Default provider not found", { status: 400 });
+    }
+
+    // Initialize the appropriate payment service
+    let paymentService: any;
+    if (defaultProvider === "lnbits") {
+      paymentService = new LNbitsPaymentService(provider);
+    } else if (defaultProvider === "opennode") {
+      paymentService = new OpenNodePaymentService(provider);
+    } else {
+      return new Response("Unsupported provider", { status: 400 });
+    }
+
+    // Get transactions
+    const transactions = await paymentService.getTransactions();
+
+    return new Response(JSON.stringify(transactions), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (e: unknown) {
+    console.error("Error fetching transactions:", e);
+    return new Response("Failed to fetch transactions", { status: 500 });
+  }
+}
+
+async function handleCheckStatus(req: Request, uid: string): Promise<Response> {
+  try {
+    const url = new URL(req.url);
+    const chargeId = url.searchParams.get("chargeId");
+
+    if (!chargeId) {
+      return new Response("chargeId query parameter is required", { status: 400 });
+    }
+
+    // Fetch user's default provider
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    const defaultProvider = userData?.defaultProvider;
+    const fundingProviders = userData?.fundingProviders || [];
+
+    if (!defaultProvider) {
+      return new Response("No default provider set", { status: 400 });
+    }
+
+    // Find the default provider details
+    const provider = fundingProviders.find(
+      (p: any) => p.provider === defaultProvider,
+    );
+
+    if (!provider) {
+      return new Response("Default provider not found", { status: 400 });
+    }
+
+    // Initialize the appropriate payment service
+    let paymentService: any;
+    if (defaultProvider === "lnbits") {
+      paymentService = new LNbitsPaymentService(provider);
+    } else if (defaultProvider === "opennode") {
+      paymentService = new OpenNodePaymentService(provider);
+    } else {
+      return new Response("Unsupported provider", { status: 400 });
+    }
+
+    // Check payment status
+    let status: string = '';
+    if (defaultProvider === "lnbits") {
+      status = await paymentService.checkStatus(chargeId);
+    } else if (defaultProvider === "opennode") {
+      status = await paymentService.checkStatus(chargeId);
+    }
+
+    return new Response(JSON.stringify({ chargeId, status }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (e: unknown) {
+    console.error("Error checking payment status:", e);
+    return new Response("Failed to check payment status", { status: 500 });
   }
 }
 

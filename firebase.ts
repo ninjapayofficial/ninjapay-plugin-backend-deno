@@ -24,4 +24,15 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount as ServiceAccount),
 });
 
+// // Export auth and firestore instances
+// const auth = admin.auth();
+// const db = admin.firestore();
+
+
 export default admin;
+
+  // auth,
+  // firestore: db,
+
+
+
