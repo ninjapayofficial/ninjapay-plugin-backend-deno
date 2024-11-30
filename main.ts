@@ -5,11 +5,11 @@ const decoder = new TextDecoder();
 import { serve } from "https://deno.land/std@0.185.0/http/server.ts";
 import { renderFileToString } from "https://deno.land/x/dejs@0.10.3/mod.ts";
 import { exists } from "https://deno.land/std@0.185.0/fs/mod.ts";
-import { config } from "dotenv";
+import { config } from "npm:dotenv@16.3.1";
 import {
+  deleteCookie,
   getCookies,
   setCookie,
-  deleteCookie,
 } from "https://deno.land/std@0.224.0/http/cookie.ts";
 // Firebase Admin SDK for Deno
 // import { initializeApp, cert, ServiceAccount } from "https://esm.sh/firebase-admin@11.5.0/app";
@@ -17,7 +17,7 @@ import {
 // import { getFirestore } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-firestore.js";
 // import { initializeApp, cert, getAuth, getFirestore } from "https://deno.land/x/firebase_adminsdk@v0.5.0/mod.ts";
 // import firebase from "https://esm.sh/firebase@9.17.0/app";
-import admin from './firebase.ts';
+import admin from "./firebase.ts";
 // Load environment variables from .env
 config();
 
@@ -32,7 +32,6 @@ config();
 // initializeApp({
 //   credential: cert(serviceAccount),
 // });
-
 
 const auth = admin.auth();
 const db = admin.firestore();
@@ -69,7 +68,15 @@ async function handler(req: Request): Promise<Response> {
   const token = cookies.token;
 
   // Define protected routes
-  const protectedRoutes = ["/", "/install", "/funding", "/add-funding", "/add-funding/lnbits", "/add-funding/opennode", "/set-default-provider"];
+  const protectedRoutes = [
+    "/",
+    "/install",
+    "/funding",
+    "/add-funding",
+    "/add-funding/lnbits",
+    "/add-funding/opennode",
+    "/set-default-provider",
+  ];
 
   // Initialize UID
   let uid = "";
@@ -174,7 +181,8 @@ async function handler(req: Request): Promise<Response> {
           stderr: "piped",
         });
 
-        const { code: denoRunCode, stderr: denoRunStderr } = await denoRunCommand.output();
+        const { code: denoRunCode, stderr: denoRunStderr } =
+          await denoRunCommand.output();
         const denoRunErrorString = decoder.decode(denoRunStderr);
 
         if (denoRunCode !== 0) {
@@ -346,7 +354,10 @@ async function handler(req: Request): Promise<Response> {
     }
   } else if (req.method === "GET" && pathname === "/add-funding") {
     // Show options to select a provider
-    const body = await renderFileToString(`${Deno.cwd()}/views/add_funding.ejs`, {});
+    const body = await renderFileToString(
+      `${Deno.cwd()}/views/add_funding.ejs`,
+      {},
+    );
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
@@ -368,7 +379,10 @@ async function handler(req: Request): Promise<Response> {
     }
   } else if (req.method === "GET" && pathname === "/add-funding/lnbits") {
     // Show LNbits setup form
-    const body = await renderFileToString(`${Deno.cwd()}/views/add_lnbits.ejs`, {});
+    const body = await renderFileToString(
+      `${Deno.cwd()}/views/add_lnbits.ejs`,
+      {},
+    );
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
@@ -425,7 +439,10 @@ async function handler(req: Request): Promise<Response> {
     }
   } else if (req.method === "GET" && pathname === "/add-funding/opennode") {
     // Show OpenNode setup form
-    const body = await renderFileToString(`${Deno.cwd()}/views/add_opennode.ejs`, {});
+    const body = await renderFileToString(
+      `${Deno.cwd()}/views/add_opennode.ejs`,
+      {},
+    );
     return new Response(body, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
@@ -520,5 +537,3 @@ async function handler(req: Request): Promise<Response> {
 // Start the server
 console.log("Server is running on http://localhost:8000");
 serve(handler, { port: 8000 });
-
-
