@@ -1,0 +1,67 @@
+<!-- views/funding.ejs -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Funding Providers</title>
+</head>
+<body>
+  <h1>Funding Providers</h1>
+  <p><a href="/logout">Logout</a></p>
+  <h2>Connected Providers:</h2>
+  <ul>
+    <% for (const [index, provider] of fundingProviders.entries()) { %>
+      <li>
+        <strong>Provider:</strong> <%= provider.provider %><br>
+        <% if (provider.provider === 'lnbits') { %>
+          Instance URL: <%= provider.instanceUrl %><br>
+        <% } %>
+        Provider Invoice Key: <%= provider.providerInvoiceKey %><br>
+        Provider Admin Key: <%= provider.providerAdminKey %><br>
+        <% if (defaultProvider === provider.provider) { %>
+          <em>Default Provider</em>
+        <% } else { %>
+          <form action="/set-default-provider" method="post" style="display:inline;">
+            <input type="hidden" name="providerIndex" value="<%= index %>">
+            <button type="submit">Set as Default</button>
+          </form>
+        <% } %>
+      </li>
+    <% } %>
+  </ul>
+  <p><a href="/add-funding">Add Funding Provider</a></p>
+
+  <h2>Payment Actions:</h2>
+  <form action="/createPayLink" method="post">
+    <h3>Create Payment Link</h3>
+    <label for="amount">Amount (sat):</label>
+    <input type="number" step="0.01" id="amount" name="amount" required><br><br>
+    <label for="memo">Memo:</label>
+    <input type="text" id="memo" name="memo"><br><br>
+    <button type="submit">Create Pay Link</button>
+  </form>
+
+  <h3>Get Balance</h3>
+  <form action="/balance" method="get">
+    <button type="submit">Get Balance</button>
+  </form>
+
+  <h3>Pay Invoice</h3>
+  <form action="/payInvoice" method="post">
+    <label for="paymentRequest">Payment Request:</label>
+    <input type="text" id="paymentRequest" name="paymentRequest" required><br><br>
+    <button type="submit">Pay Invoice</button>
+  </form>
+
+  <h3>Transactions</h3>
+  <form action="/transactions" method="get">
+    <button type="submit">Get Transactions</button>
+  </form>
+
+  <h3>Check Payment Status</h3>
+  <form action="/checkStatus" method="get">
+    <label for="chargeId">Charge ID:</label>
+    <input type="text" id="chargeId" name="chargeId" required><br><br>
+    <button type="submit">Check Status</button>
+  </form>
+</body>
+</html>

@@ -369,25 +369,37 @@ async function handler(req: Request): Promise<Response | any> {
       headers,
     });
   } else if (req.method === "GET" && pathname === "/funding") {
-    // Serve the funding page
-    try {
-      const userDoc = await db.collection("users").doc(uid).get();
-      const userData = userDoc.exists ? userDoc.data() : {};
-      const fundingProviders = userData?.fundingProviders || [];
-      const defaultProvider = userData?.defaultProvider || "";
-
-      const body = await renderFileToString(`${Deno.cwd()}/views/funding.ejs`, {
-        fundingProviders,
-        defaultProvider,
-      });
-
-      return new Response(body, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    } catch (e: unknown) {
-      console.error("Error fetching funding providers:", e);
-      return new Response("Internal Server Error", { status: 500 });
-    }
+      try {
+          const userDoc = await db.collection("users").doc(uid).get();
+          const userData = userDoc.exists ? userDoc.data() : {};
+          const fundingProviders = userData?.fundingProviders || [];
+          const defaultProvider = userData?.defaultProvider || "";
+  
+          // Fetch transactions based on the default provider
+          let transactions: any[] = []; // Explicitly type as any[] or a more specific type if known
+          if (defaultProvider) {
+              const response = await handleGetTransactions(req, uid);
+              if (response.ok) {
+                  transactions = await response.json(); // Extract JSON data from Response
+              } else {
+                  console.error("Error fetching transactions:", response.status, response.statusText);
+                  // Handle the error, e.g., show an error message to the user
+              }
+          }
+          
+          const body = await renderFileToString(`${Deno.cwd()}/views/funding.ejs`, {
+              fundingProviders,
+              defaultProvider,
+              transactions,
+          });
+  
+          return new Response(body, {
+              headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
+      } catch (e: unknown) {
+          console.error("Error fetching funding providers:", e);
+          return new Response("Internal Server Error", { status: 500 });
+      }
   } else if (req.method === "GET" && pathname === "/add-funding") {
     // Show options to select a provider
     const body = await renderFileToString(
