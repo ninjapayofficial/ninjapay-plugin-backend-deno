@@ -88,6 +88,10 @@ export class LNbitsPaymentService {
 
   // Pay an invoice
   async payInvoice(paymentRequest: string): Promise<PayInvoiceResponse> {
+    if (!paymentRequest) {
+      throw new Error("Payment request is required");
+    }
+  
     const url = `${this.provider.instanceUrl}/api/v1/payments`;
     const response = await fetch(url, {
       method: "POST",
@@ -97,18 +101,19 @@ export class LNbitsPaymentService {
       },
       body: JSON.stringify({
         out: true,
-        payment_request: paymentRequest,
+        bolt11: paymentRequest,
       }),
     });
-
+  
     if (!response.ok) {
       const error = await response.text();
       throw new Error(`LNbits payInvoice failed: ${error}`);
     }
-
+  
     const data = await response.json();
     return { payment_hash: data.payment_hash, status: data.status };
   }
+  
 
   // Get transactions
   async getTransactions(): Promise<Transaction[]> {
@@ -145,6 +150,6 @@ export class LNbitsPaymentService {
     }
 
     const data = await response.json();
-    return data.status;
+    return data;
   }
 }

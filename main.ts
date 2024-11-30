@@ -13,8 +13,6 @@ import {
 } from "https://deno.land/std@0.224.0/http/cookie.ts";
 
 import admin from "./firebase.ts";
-// import auth from "./firebase.ts";
-// import db from "./firebase.ts";
 import { LNbitsPaymentService } from "./services/lnbitsPaymentService.ts";
 import { OpenNodePaymentService } from "./services/opennodePaymentService.ts";
 
@@ -47,7 +45,6 @@ async function verifyIdToken(token: string): Promise<{ uid: string }> {
 }
 
 // Helper function to get provider from headers
-// Helper function to get provider from headers
 async function getProviderFromHeaders(headers: Headers): Promise<any | null> {
   const providerInvoiceKey = headers.get("X-Provider-Invoice-Key");
   const providerAdminKey = headers.get("X-Provider-Admin-Key");
@@ -57,22 +54,24 @@ async function getProviderFromHeaders(headers: Headers): Promise<any | null> {
     return null;
   }
 
-  // Fetch all users
-  const usersSnapshot = await db.collection("users").get();
-  console.log(`Fetched ${usersSnapshot.size} users from Firestore.`);
+  if (providerInvoiceKey) {
+    const providerDoc = await db.collection("providerKeys").doc(providerInvoiceKey).get();
+    if (providerDoc.exists) {
+      console.log(`Provider found via Invoice Key: ${providerInvoiceKey}`);
+      return providerDoc.data();
+    }
+  }
 
-  for (const userDoc of usersSnapshot.docs) {
-    const fundingProviders = userDoc.data().fundingProviders || [];
+  if (providerAdminKey) {
+    const querySnapshot = await db.collection("providerKeys")
+      .where("providerAdminKey", "==", providerAdminKey)
+      .limit(1)
+      .get();
 
-    for (const provider of fundingProviders) {
-      if (providerInvoiceKey && provider.providerInvoiceKey === providerInvoiceKey) {
-        console.log(`Provider found via Invoice Key: ${providerInvoiceKey}`);
-        return provider;
-      }
-      if (providerAdminKey && provider.providerAdminKey === providerAdminKey) {
-        console.log(`Provider found via Admin Key: ${providerAdminKey}`);
-        return provider;
-      }
+    if (!querySnapshot.empty) {
+      const providerDoc = querySnapshot.docs[0];
+      console.log(`Provider found via Admin Key: ${providerAdminKey}`);
+      return providerDoc.data();
     }
   }
 
@@ -80,15 +79,18 @@ async function getProviderFromHeaders(headers: Headers): Promise<any | null> {
   return null; // No matching provider found
 }
 
-
 // Function to handle HTTP requests
-async function handler(req: Request): Promise<Response> {
+async function handler(req: Request): Promise<Response | any> {
   const url = new URL(req.url);
   const pathname = url.pathname;
 
   // Parse cookies from the request
   const cookies = getCookies(req.headers);
   const token = cookies.token;
+
+  // Extract provider keys from headers
+  const providerInvoiceKey = req.headers.get("X-Provider-Invoice-Key");
+  const providerAdminKey = req.headers.get("X-Provider-Admin-Key");
 
   // Define protected routes
   const protectedRoutes = [
@@ -99,34 +101,38 @@ async function handler(req: Request): Promise<Response> {
     "/add-funding/lnbits",
     "/add-funding/opennode",
     "/set-default-provider",
-    // "/createPayLink",
-    // "/balance",
-    // "/payInvoice",
-    // "/transactions",
-    // "/checkStatus",
+    "/createPayLink",
+    "/balance",
+    "/payInvoice",
+    "/transactions",
+    "/checkStatus",
   ];
 
   // Initialize UID
   let uid = "";
 
+  // Check if the route is protected
   if (protectedRoutes.includes(pathname)) {
-    // Check if the user is authenticated
-    if (!token) {
-      // Redirect to login page
-      const redirectUrl = new URL("/login", req.url).toString();
-      return Response.redirect(redirectUrl, 302);
-    } else {
-      // Verify token and get UID
-      try {
-        const decoded = await verifyIdToken(token);
-        uid = decoded.uid;
-      } catch (e) {
-        console.error("Error verifying token:", e);
+    // If provider keys are not present, require authentication
+    if (!providerInvoiceKey && !providerAdminKey) {
+      if (!token) {
         // Redirect to login page
         const redirectUrl = new URL("/login", req.url).toString();
         return Response.redirect(redirectUrl, 302);
+      } else {
+        // Verify token and get UID
+        try {
+          const decoded = await verifyIdToken(token);
+          uid = decoded.uid;
+        } catch (e) {
+          console.error("Error verifying token:", e);
+          // Redirect to login page
+          const redirectUrl = new URL("/login", req.url).toString();
+          return Response.redirect(redirectUrl, 302);
+        }
       }
     }
+    // Else, if provider keys are present, proceed without setting UID
   }
 
   // Routing
@@ -204,7 +210,7 @@ async function handler(req: Request): Promise<Response> {
       if (await exists(migrateFile)) {
         // Use Deno.Command to run the migration script
         const denoRunCommand = new Deno.Command("deno", {
-          args: ["run", "--allow-read", "--allow-write", migrateFile],
+          args: ["deno", "run", "--allow-read", "--allow-write", migrateFile],
           stdout: "null",
           stderr: "piped",
         });
@@ -449,16 +455,39 @@ async function handler(req: Request): Promise<Response> {
       });
 
       // Update Firestore
-      await userDocRef.set({
-        fundingProviders,
-      }, { merge: true });
+      await userDocRef.set(
+        {
+          fundingProviders,
+        },
+        { merge: true }
+      );
 
       // If this is the first provider, set as default
       if (fundingProviders.length === 1) {
-        await userDocRef.set({
-          defaultProvider: "lnbits",
-        }, { merge: true });
+        await userDocRef.set(
+          {
+            defaultProvider: "lnbits",
+          },
+          { merge: true }
+        );
       }
+
+      // Add entries to providerKeys collection
+      const providerData = {
+        userId: uid,
+        provider: "lnbits",
+        instanceUrl,
+        invoiceKey,
+        adminKey,
+        providerInvoiceKey,
+        providerAdminKey,
+      };
+
+      // Add providerInvoiceKey document
+      await db.collection("providerKeys").doc(providerInvoiceKey).set(providerData);
+
+      // Add providerAdminKey document
+      await db.collection("providerKeys").doc(providerAdminKey).set(providerData);
 
       // Redirect to funding page
       const redirectUrl = new URL("/funding", req.url).toString();
@@ -507,16 +536,38 @@ async function handler(req: Request): Promise<Response> {
       });
 
       // Update Firestore
-      await userDocRef.set({
-        fundingProviders,
-      }, { merge: true });
+      await userDocRef.set(
+        {
+          fundingProviders,
+        },
+        { merge: true }
+      );
 
       // If this is the first provider, set as default
       if (fundingProviders.length === 1) {
-        await userDocRef.set({
-          defaultProvider: "opennode",
-        }, { merge: true });
+        await userDocRef.set(
+          {
+            defaultProvider: "opennode",
+          },
+          { merge: true }
+        );
       }
+
+      // Add entries to providerKeys collection
+      const providerData = {
+        userId: uid,
+        provider: "opennode",
+        invoiceKey,
+        readApiKey,
+        providerInvoiceKey,
+        providerAdminKey,
+      };
+
+      // Add providerInvoiceKey document
+      await db.collection("providerKeys").doc(providerInvoiceKey).set(providerData);
+
+      // Add providerAdminKey document
+      await db.collection("providerKeys").doc(providerAdminKey).set(providerData);
 
       // Redirect to funding page
       const redirectUrl = new URL("/funding", req.url).toString();
@@ -548,9 +599,12 @@ async function handler(req: Request): Promise<Response> {
       const selectedProvider = fundingProviders[providerIndex].provider;
 
       // Update default provider in Firestore
-      await userDocRef.set({
-        defaultProvider: selectedProvider,
-      }, { merge: true });
+      await userDocRef.set(
+        {
+          defaultProvider: selectedProvider,
+        },
+        { merge: true }
+      );
 
       // Redirect back to funding page
       const redirectUrl = new URL("/funding", req.url).toString();
@@ -648,7 +702,6 @@ async function handleCreatePayLink(req: Request, uid: string): Promise<Response>
   }
 }
 
-
 async function handleGetBalance(req: Request, uid: string): Promise<Response> {
   try {
     const headers = req.headers;
@@ -707,7 +760,7 @@ async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
     provider = await getProviderFromHeaders(headers);
 
     if (!provider && uid) {
-      // If no provider specified via headers, use default provider from session
+      // Use default provider if no provider key is provided
       const userDoc = await db.collection("users").doc(uid).get();
       const userData = userDoc.exists ? userDoc.data() : {};
       const defaultProviderName = userData?.defaultProvider;
@@ -717,15 +770,24 @@ async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
         provider = fundingProviders.find(
           (p: any) => p.provider === defaultProviderName,
         );
+        if (provider) {
+          console.log(`Using default provider: ${provider.provider}`);
+        } else {
+          console.warn(`Default provider ${defaultProviderName} not found.`);
+        }
       }
     }
 
     if (!provider) {
+      console.error("No provider specified or found.");
       return new Response("No provider specified or found", { status: 400 });
     }
 
     const formData = await req.formData();
     const paymentRequest = formData.get("paymentRequest")?.toString();
+
+    // Log the received paymentRequest
+    console.log(`Received paymentRequest: ${paymentRequest}`);
 
     if (!paymentRequest) {
       return new Response("Payment request is required", { status: 400 });
@@ -735,14 +797,18 @@ async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
     let paymentService: any;
     if (provider.provider === "lnbits") {
       paymentService = new LNbitsPaymentService(provider);
+      console.log("Initialized LNbitsPaymentService.");
     } else if (provider.provider === "opennode") {
       paymentService = new OpenNodePaymentService(provider);
+      console.log("Initialized OpenNodePaymentService.");
     } else {
+      console.error(`Unsupported provider: ${provider.provider}`);
       return new Response("Unsupported provider", { status: 400 });
     }
 
     // Pay the invoice
     const payResponse = await paymentService.payInvoice(paymentRequest);
+    console.log("Payment response:", payResponse);
 
     return new Response(JSON.stringify(payResponse), {
       headers: { "Content-Type": "application/json" },
@@ -753,6 +819,7 @@ async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
     return new Response("Failed to pay invoice", { status: 500 });
   }
 }
+
 
 async function handleGetTransactions(req: Request, uid: string): Promise<Response> {
   try {
