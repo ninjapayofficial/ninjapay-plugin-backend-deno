@@ -3,10 +3,16 @@
 <html>
 <head>
   <title>Add Funding Provider</title>
+  <style>
+    .error {
+      color: red;
+      margin-top: 10px;
+    }
+  </style>
 </head>
 <body>
   <h1>Add Funding Provider</h1>
-  <form action="/add-funding" method="post">
+  <form id="addFundingForm">
     <label for="provider">Select Provider:</label>
     <select name="provider" id="provider">
       <option value="lnbits">LNbits</option>
@@ -15,5 +21,38 @@
     </select>
     <button type="submit">Next</button>
   </form>
+  <div id="addFundingError" class="error"></div>
+
+  <script>
+    document.getElementById('addFundingForm').addEventListener('submit', async (e) => {
+      e.preventDefault(); // Prevent the default form submission
+
+      const provider = document.getElementById('provider').value;
+
+      try {
+        const response = await fetch('/add-funding', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ provider })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          if (data.redirect) {
+            window.location.href = data.redirect;
+          }
+        } else {
+          // Display error message
+          document.getElementById('addFundingError').textContent = data.error || 'Failed to add funding provider';
+        }
+      } catch (error) {
+        console.error('Error adding funding provider:', error);
+        document.getElementById('addFundingError').textContent = 'An unexpected error occurred.';
+      }
+    });
+  </script>
 </body>
 </html>

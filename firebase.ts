@@ -28,11 +28,7 @@ admin.initializeApp({
 // const auth = admin.auth();
 // const db = admin.firestore();
 
-
 export default admin;
 
-  // auth,
-  // firestore: db,
-
-
-
+// auth,
+// firestore: db,

@@ -3,20 +3,89 @@
 <html>
 <head>
   <title>Deno Plugin Manager</title>
+  <style>
+    .error {
+      color: red;
+      margin-top: 10px;
+    }
+  </style>
 </head>
 <body>
   <h1>Deno Plugin Manager</h1>
-  <p><a href="/logout">Logout</a></p>
-  <form action="/install" method="post">
+  <button onclick="logout()">Logout</button>
+  
+  <h2>Install New Plugin:</h2>
+  <form id="installForm">
     <label for="gitUrl">Git URL:</label>
     <input type="text" id="gitUrl" name="gitUrl" required>
     <button type="submit">Install Plugin</button>
   </form>
+  <div id="installError" class="error"></div>
+  <div id="installSuccess" class="success"></div>
+  
   <h2>Installed Plugins:</h2>
-  <ul>
+  <ul id="pluginList">
     <% for (const plugin of plugins) { %>
       <li><%= plugin %></li>
     <% } %>
   </ul>
+
+  <script>
+    // Handle plugin installation
+    document.getElementById('installForm').addEventListener('submit', async (e) => {
+      e.preventDefault(); // Prevent the default form submission
+
+      const gitUrl = document.getElementById('gitUrl').value;
+
+      try {
+        const response = await fetch('/install', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ gitUrl })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          if (data.redirect) {
+            window.location.href = data.redirect;
+          }
+        } else {
+          // Display error message
+          document.getElementById('installError').textContent = data.error || 'Installation failed';
+        }
+      } catch (error) {
+        console.error('Error installing plugin:', error);
+        document.getElementById('installError').textContent = 'An unexpected error occurred.';
+      }
+    });
+
+    // Handle logout
+    async function logout() {
+      try {
+        const response = await fetch('/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          if (data.redirect) {
+            window.location.href = data.redirect;
+          }
+        } else {
+          alert(data.error || 'Logout failed');
+        }
+      } catch (error) {
+        console.error('Error during logout:', error);
+        alert('An unexpected error occurred during logout.');
+      }
+    }
+  </script>
 </body>
 </html>

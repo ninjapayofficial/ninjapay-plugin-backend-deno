@@ -55,7 +55,9 @@ async function getProviderFromHeaders(headers: Headers): Promise<any | null> {
   }
 
   if (providerInvoiceKey) {
-    const providerDoc = await db.collection("providerKeys").doc(providerInvoiceKey).get();
+    const providerDoc = await db.collection("providerKeys").doc(
+      providerInvoiceKey,
+    ).get();
     if (providerDoc.exists) {
       console.log(`Provider found via Invoice Key: ${providerInvoiceKey}`);
       return providerDoc.data();
@@ -116,9 +118,11 @@ async function handler(req: Request): Promise<Response | any> {
     // If provider keys are not present, require authentication
     if (!providerInvoiceKey && !providerAdminKey) {
       if (!token) {
-        // Redirect to login page
-        const redirectUrl = new URL("/login", req.url).toString();
-        return Response.redirect(redirectUrl, 302);
+        // Respond with JSON indicating the need to log in
+        return new Response(JSON.stringify({ redirect: "/login" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 401,
+        });
       } else {
         // Verify token and get UID
         try {
@@ -126,9 +130,11 @@ async function handler(req: Request): Promise<Response | any> {
           uid = decoded.uid;
         } catch (e) {
           console.error("Error verifying token:", e);
-          // Redirect to login page
-          const redirectUrl = new URL("/login", req.url).toString();
-          return Response.redirect(redirectUrl, 302);
+          // Respond with JSON indicating the need to log in
+          return new Response(JSON.stringify({ redirect: "/login" }), {
+            headers: { "Content-Type": "application/json" },
+            status: 401,
+          });
         }
       }
     }
@@ -165,24 +171,30 @@ async function handler(req: Request): Promise<Response | any> {
     });
   } else if (req.method === "POST" && pathname === "/install") {
     // Handle plugin installation
-    const formData = await req.formData();
-    const gitUrl = formData.get("gitUrl")?.toString();
-
-    if (!gitUrl) {
-      return new Response("Git URL is required", { status: 400 });
-    }
-
-    let repoName;
     try {
-      repoName = getRepoName(gitUrl);
-    } catch (e: unknown) {
-      return new Response(`Invalid Git URL: ${e}`, { status: 400 });
-    }
+      const body = await req.json();
+      const gitUrl = body.gitUrl;
 
-    const pluginsDir = "./plugins";
-    const pluginPath = `${pluginsDir}/${repoName}`;
+      if (!gitUrl) {
+        return new Response(JSON.stringify({ error: "Git URL is required" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 400,
+        });
+      }
 
-    try {
+      let repoName;
+      try {
+        repoName = getRepoName(gitUrl);
+      } catch (e: unknown) {
+        return new Response(
+          JSON.stringify({ error: `Invalid Git URL: ${e}` }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      const pluginsDir = "./plugins";
+      const pluginPath = `${pluginsDir}/${repoName}`;
+
       // Check if the plugin directory already exists
       if (await exists(pluginPath)) {
         // Remove the existing directory
@@ -200,9 +212,12 @@ async function handler(req: Request): Promise<Response | any> {
       const errorString = decoder.decode(stderr);
 
       if (code !== 0) {
-        return new Response(`Failed to clone repository: ${errorString}`, {
-          status: 500,
-        });
+        return new Response(
+          JSON.stringify({
+            error: `Failed to clone repository: ${errorString}`,
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 500 },
+        );
       }
 
       // Run migrations if migrate.ts exists
@@ -210,7 +225,7 @@ async function handler(req: Request): Promise<Response | any> {
       if (await exists(migrateFile)) {
         // Use Deno.Command to run the migration script
         const denoRunCommand = new Deno.Command("deno", {
-          args: ["deno", "run", "--allow-read", "--allow-write", migrateFile],
+          args: ["run", "--allow-read", "--allow-write", migrateFile],
           stdout: "null",
           stderr: "piped",
         });
@@ -221,20 +236,26 @@ async function handler(req: Request): Promise<Response | any> {
 
         if (denoRunCode !== 0) {
           console.error("Error running migrations:", denoRunErrorString);
-          // Optionally, you can return a response indicating the migration failed
+          return new Response(
+            JSON.stringify({ error: "Migration failed" }),
+            { headers: { "Content-Type": "application/json" }, status: 500 },
+          );
         }
       } else {
         console.warn(`Migration file not found at ${migrateFile}`);
       }
 
-      // Redirect back to the main page
-      const redirectUrl = new URL("/", req.url).toString();
-      return Response.redirect(redirectUrl, 303);
+      // Respond with success and redirect URL
+      return new Response(JSON.stringify({ success: true, redirect: "/" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
     } catch (e: unknown) {
       console.error("Error installing plugin:", e);
-      return new Response(`Failed to install plugin: ${e}`, {
-        status: 500,
-      });
+      return new Response(
+        JSON.stringify({ error: `Failed to install plugin: ${e}` }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
   } else if (req.method === "GET" && pathname === "/signup") {
     // Serve the signup page
@@ -244,20 +265,23 @@ async function handler(req: Request): Promise<Response | any> {
     });
   } else if (req.method === "POST" && pathname === "/signup") {
     // Handle user signup
-    const formData = await req.formData();
-    const email = formData.get("email")?.toString();
-    const password = formData.get("password")?.toString();
-
-    if (!email || !password) {
-      return new Response("Email and password are required", { status: 400 });
-    }
-
-    // Firebase Signup API Endpoint
-    const apiKey = Deno.env.get("API_KEY");
-    const signUpUrl =
-      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
-
     try {
+      const body = await req.json();
+      const email = body.email;
+      const password = body.password;
+
+      if (!email || !password) {
+        return new Response(
+          JSON.stringify({ error: "Email and password are required" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Firebase Signup API Endpoint
+      const apiKey = Deno.env.get("API_KEY");
+      const signUpUrl =
+        `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
+
       const response = await fetch(signUpUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -271,9 +295,10 @@ async function handler(req: Request): Promise<Response | any> {
       const data = await response.json();
 
       if (!response.ok) {
-        return new Response(`Signup failed: ${data.error.message}`, {
-          status: 400,
-        });
+        return new Response(
+          JSON.stringify({ error: `Signup failed: ${data.error.message}` }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
       }
 
       // Set auth token in cookies
@@ -286,16 +311,23 @@ async function handler(req: Request): Promise<Response | any> {
         // secure: true, // Uncomment when using HTTPS
       });
 
-      // Redirect to main page
-      const redirectUrl = new URL("/", req.url).toString();
-      headers.set("Location", redirectUrl);
-      return new Response(null, {
-        status: 302,
-        headers,
-      });
+      // Return success with redirect URL
+      return new Response(
+        JSON.stringify({ success: true, redirect: "/" }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Set-Cookie": headers.get("Set-Cookie") || "",
+          },
+          status: 200,
+        },
+      );
     } catch (e: unknown) {
       console.error("Error during signup:", e);
-      return new Response(`Failed to signup: ${e}`, { status: 500 });
+      return new Response(
+        JSON.stringify({ error: `Failed to signup: ${e}` }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
   } else if (req.method === "GET" && pathname === "/login") {
     // Serve the login page
@@ -305,20 +337,23 @@ async function handler(req: Request): Promise<Response | any> {
     });
   } else if (req.method === "POST" && pathname === "/login") {
     // Handle user login
-    const formData = await req.formData();
-    const email = formData.get("email")?.toString();
-    const password = formData.get("password")?.toString();
-
-    if (!email || !password) {
-      return new Response("Email and password are required", { status: 400 });
-    }
-
-    // Firebase Login API Endpoint
-    const apiKey = Deno.env.get("API_KEY");
-    const signInUrl =
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
-
     try {
+      const body = await req.json();
+      const email = body.email;
+      const password = body.password;
+
+      if (!email || !password) {
+        return new Response(
+          JSON.stringify({ error: "Email and password are required" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Firebase Login API Endpoint
+      const apiKey = Deno.env.get("API_KEY");
+      const signInUrl =
+        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
+
       const response = await fetch(signInUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -332,9 +367,10 @@ async function handler(req: Request): Promise<Response | any> {
       const data = await response.json();
 
       if (!response.ok) {
-        return new Response(`Login failed: ${data.error.message}`, {
-          status: 400,
-        });
+        return new Response(
+          JSON.stringify({ error: `Login failed: ${data.error.message}` }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
       }
 
       // Set auth token in cookies
@@ -347,59 +383,83 @@ async function handler(req: Request): Promise<Response | any> {
         // secure: true, // Uncomment when using HTTPS
       });
 
-      // Redirect to main page
-      const redirectUrl = new URL("/", req.url).toString();
-      headers.set("Location", redirectUrl);
-      return new Response(null, {
-        status: 302,
-        headers,
-      });
+      // Return success with redirect URL
+      return new Response(
+        JSON.stringify({ success: true, redirect: "/" }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Set-Cookie": headers.get("Set-Cookie") || "",
+          },
+          status: 200,
+        },
+      );
     } catch (e: unknown) {
       console.error("Error during login:", e);
-      return new Response(`Failed to login: ${e}`, { status: 500 });
+      return new Response(
+        JSON.stringify({ error: `Failed to login: ${e}` }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
-  } else if (req.method === "GET" && pathname === "/logout") {
+  } else if (req.method === "POST" && pathname === "/logout") {
     // Handle user logout
-    const headers = new Headers();
-    deleteCookie(headers, "token");
-    const redirectUrl = new URL("/login", req.url).toString();
-    headers.set("Location", redirectUrl);
-    return new Response(null, {
-      status: 302,
-      headers,
-    });
+    try {
+      const headers = new Headers();
+      deleteCookie(headers, "token");
+      return new Response(
+        JSON.stringify({ success: true, redirect: "/login" }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Set-Cookie": headers.get("Set-Cookie") || "",
+          },
+          status: 200,
+        },
+      );
+    } catch (e: unknown) {
+      console.error("Error during logout:", e);
+      return new Response(
+        JSON.stringify({ error: `Failed to logout: ${e}` }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
+    }
   } else if (req.method === "GET" && pathname === "/funding") {
-      try {
-          const userDoc = await db.collection("users").doc(uid).get();
-          const userData = userDoc.exists ? userDoc.data() : {};
-          const fundingProviders = userData?.fundingProviders || [];
-          const defaultProvider = userData?.defaultProvider || "";
-  
-          // Fetch transactions based on the default provider
-          let transactions: any[] = []; // Explicitly type as any[] or a more specific type if known
-          if (defaultProvider) {
-              const response = await handleGetTransactions(req, uid);
-              if (response.ok) {
-                  transactions = await response.json(); // Extract JSON data from Response
-              } else {
-                  console.error("Error fetching transactions:", response.status, response.statusText);
-                  // Handle the error, e.g., show an error message to the user
-              }
-          }
-          
-          const body = await renderFileToString(`${Deno.cwd()}/views/funding.ejs`, {
-              fundingProviders,
-              defaultProvider,
-              transactions,
-          });
-  
-          return new Response(body, {
-              headers: { "Content-Type": "text/html; charset=utf-8" },
-          });
-      } catch (e: unknown) {
-          console.error("Error fetching funding providers:", e);
-          return new Response("Internal Server Error", { status: 500 });
+    try {
+      const userDoc = await db.collection("users").doc(uid).get();
+      const userData = userDoc.exists ? userDoc.data() : {};
+      const fundingProviders = userData?.fundingProviders || [];
+      const defaultProvider = userData?.defaultProvider || "";
+
+      // Fetch transactions based on the default provider
+      let transactions: any[] = []; // Explicitly type as any[] or a more specific type if known
+      if (defaultProvider) {
+        const response = await handleGetTransactions(req, uid);
+        if (response.ok) {
+          const data = await response.json();
+          transactions = data.transactions || [];
+        } else {
+          console.error(
+            "Error fetching transactions:",
+            response.status,
+            response.statusText,
+          );
+          // Handle the error, e.g., show an error message to the user
+        }
       }
+
+      const body = await renderFileToString(`${Deno.cwd()}/views/funding.ejs`, {
+        fundingProviders,
+        defaultProvider,
+        transactions,
+      });
+
+      return new Response(body, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    } catch (e: unknown) {
+      console.error("Error fetching funding providers:", e);
+      return new Response("Internal Server Error", { status: 500 });
+    }
   } else if (req.method === "GET" && pathname === "/add-funding") {
     // Show options to select a provider
     const body = await renderFileToString(
@@ -411,19 +471,32 @@ async function handler(req: Request): Promise<Response | any> {
     });
   } else if (req.method === "POST" && pathname === "/add-funding") {
     // Handle selection of provider
-    const formData = await req.formData();
-    const provider = formData.get("provider")?.toString();
+    try {
+      const body = await req.json();
+      const provider = body.provider;
 
-    if (provider === "lnbits") {
-      // Redirect to LNbits setup
-      const redirectUrl = new URL("/add-funding/lnbits", req.url).toString();
-      return Response.redirect(redirectUrl, 302);
-    } else if (provider === "opennode") {
-      // Redirect to OpenNode setup
-      const redirectUrl = new URL("/add-funding/opennode", req.url).toString();
-      return Response.redirect(redirectUrl, 302);
-    } else {
-      return new Response("Invalid provider selected", { status: 400 });
+      if (provider === "lnbits") {
+        return new Response(
+          JSON.stringify({ redirect: "/add-funding/lnbits" }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        );
+      } else if (provider === "opennode") {
+        return new Response(
+          JSON.stringify({ redirect: "/add-funding/opennode" }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        );
+      } else {
+        return new Response(
+          JSON.stringify({ error: "Invalid provider selected" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+    } catch (e: unknown) {
+      console.error("Error selecting provider:", e);
+      return new Response(
+        JSON.stringify({ error: `Failed to select provider: ${e}` }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
   } else if (req.method === "GET" && pathname === "/add-funding/lnbits") {
     // Show LNbits setup form
@@ -436,21 +509,24 @@ async function handler(req: Request): Promise<Response | any> {
     });
   } else if (req.method === "POST" && pathname === "/add-funding/lnbits") {
     // Handle LNbits provider data submission
-    const formData = await req.formData();
-    const instanceUrl = formData.get("instanceUrl")?.toString();
-    const invoiceKey = formData.get("invoiceKey")?.toString();
-    const adminKey = formData.get("adminKey")?.toString();
-
-    if (!instanceUrl || !invoiceKey || !adminKey) {
-      return new Response("All fields are required", { status: 400 });
-    }
-
-    // Generate provider keys
-    const providerInvoiceKey = generateProviderKey("p_ik_");
-    const providerAdminKey = generateProviderKey("p_ak_");
-
-    // Save to Firestore by appending to fundingProviders array
     try {
+      const body = await req.json();
+      const instanceUrl = body.instanceUrl;
+      const invoiceKey = body.invoiceKey;
+      const adminKey = body.adminKey;
+
+      if (!instanceUrl || !invoiceKey || !adminKey) {
+        return new Response(
+          JSON.stringify({ error: "All fields are required" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Generate provider keys
+      const providerInvoiceKey = generateProviderKey("p_ik_");
+      const providerAdminKey = generateProviderKey("p_ak_");
+
+      // Save to Firestore by appending to fundingProviders array
       const userDocRef = db.collection("users").doc(uid);
       const userDoc = await userDocRef.get();
       const userData = userDoc.exists ? userDoc.data() : {};
@@ -471,7 +547,7 @@ async function handler(req: Request): Promise<Response | any> {
         {
           fundingProviders,
         },
-        { merge: true }
+        { merge: true },
       );
 
       // If this is the first provider, set as default
@@ -480,7 +556,7 @@ async function handler(req: Request): Promise<Response | any> {
           {
             defaultProvider: "lnbits",
           },
-          { merge: true }
+          { merge: true },
         );
       }
 
@@ -496,17 +572,26 @@ async function handler(req: Request): Promise<Response | any> {
       };
 
       // Add providerInvoiceKey document
-      await db.collection("providerKeys").doc(providerInvoiceKey).set(providerData);
+      await db.collection("providerKeys").doc(providerInvoiceKey).set(
+        providerData,
+      );
 
       // Add providerAdminKey document
-      await db.collection("providerKeys").doc(providerAdminKey).set(providerData);
+      await db.collection("providerKeys").doc(providerAdminKey).set(
+        providerData,
+      );
 
-      // Redirect to funding page
-      const redirectUrl = new URL("/funding", req.url).toString();
-      return Response.redirect(redirectUrl, 302);
+      // Respond with success and redirect URL
+      return new Response(
+        JSON.stringify({ success: true, redirect: "/funding" }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
     } catch (e: unknown) {
       console.error("Error saving LNbits provider:", e);
-      return new Response("Failed to add LNbits provider", { status: 500 });
+      return new Response(
+        JSON.stringify({ error: "Failed to add LNbits provider" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
   } else if (req.method === "GET" && pathname === "/add-funding/opennode") {
     // Show OpenNode setup form
@@ -519,20 +604,23 @@ async function handler(req: Request): Promise<Response | any> {
     });
   } else if (req.method === "POST" && pathname === "/add-funding/opennode") {
     // Handle OpenNode provider data submission
-    const formData = await req.formData();
-    const invoiceKey = formData.get("invoiceKey")?.toString();
-    const readApiKey = formData.get("readApiKey")?.toString();
-
-    if (!invoiceKey || !readApiKey) {
-      return new Response("All fields are required", { status: 400 });
-    }
-
-    // Generate provider keys
-    const providerInvoiceKey = generateProviderKey("p_ik_");
-    const providerAdminKey = generateProviderKey("p_ak_");
-
-    // Save to Firestore by appending to fundingProviders array
     try {
+      const body = await req.json();
+      const invoiceKey = body.invoiceKey;
+      const readApiKey = body.readApiKey;
+
+      if (!invoiceKey || !readApiKey) {
+        return new Response(
+          JSON.stringify({ error: "All fields are required" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Generate provider keys
+      const providerInvoiceKey = generateProviderKey("p_ik_");
+      const providerAdminKey = generateProviderKey("p_ak_");
+
+      // Save to Firestore by appending to fundingProviders array
       const userDocRef = db.collection("users").doc(uid);
       const userDoc = await userDocRef.get();
       const userData = userDoc.exists ? userDoc.data() : {};
@@ -552,7 +640,7 @@ async function handler(req: Request): Promise<Response | any> {
         {
           fundingProviders,
         },
-        { merge: true }
+        { merge: true },
       );
 
       // If this is the first provider, set as default
@@ -561,7 +649,7 @@ async function handler(req: Request): Promise<Response | any> {
           {
             defaultProvider: "opennode",
           },
-          { merge: true }
+          { merge: true },
         );
       }
 
@@ -576,36 +664,50 @@ async function handler(req: Request): Promise<Response | any> {
       };
 
       // Add providerInvoiceKey document
-      await db.collection("providerKeys").doc(providerInvoiceKey).set(providerData);
+      await db.collection("providerKeys").doc(providerInvoiceKey).set(
+        providerData,
+      );
 
       // Add providerAdminKey document
-      await db.collection("providerKeys").doc(providerAdminKey).set(providerData);
+      await db.collection("providerKeys").doc(providerAdminKey).set(
+        providerData,
+      );
 
-      // Redirect to funding page
-      const redirectUrl = new URL("/funding", req.url).toString();
-      return Response.redirect(redirectUrl, 302);
+      // Respond with success and redirect URL
+      return new Response(
+        JSON.stringify({ success: true, redirect: "/funding" }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
     } catch (e: unknown) {
       console.error("Error saving OpenNode provider:", e);
-      return new Response("Failed to add OpenNode provider", { status: 500 });
+      return new Response(
+        JSON.stringify({ error: "Failed to add OpenNode provider" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
   } else if (req.method === "POST" && pathname === "/set-default-provider") {
     // Handle setting a default provider
-    const formData = await req.formData();
-    const providerIndexStr = formData.get("providerIndex")?.toString();
-    const providerIndex = Number(providerIndexStr);
-
-    if (isNaN(providerIndex)) {
-      return new Response("Invalid provider index", { status: 400 });
-    }
-
     try {
+      const body = await req.json();
+      const providerIndex = body.providerIndex;
+
+      if (isNaN(providerIndex)) {
+        return new Response(
+          JSON.stringify({ error: "Invalid provider index" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
       const userDocRef = db.collection("users").doc(uid);
       const userDoc = await userDocRef.get();
       const userData = userDoc.exists ? userDoc.data() : {};
       const fundingProviders = userData?.fundingProviders || [];
 
       if (providerIndex < 0 || providerIndex >= fundingProviders.length) {
-        return new Response("Provider index out of range", { status: 400 });
+        return new Response(
+          JSON.stringify({ error: "Provider index out of range" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
       }
 
       const selectedProvider = fundingProviders[providerIndex].provider;
@@ -615,19 +717,22 @@ async function handler(req: Request): Promise<Response | any> {
         {
           defaultProvider: selectedProvider,
         },
-        { merge: true }
+        { merge: true },
       );
 
-      // Redirect back to funding page
-      const redirectUrl = new URL("/funding", req.url).toString();
-      return Response.redirect(redirectUrl, 302);
+      // Respond with success and redirect URL
+      return new Response(
+        JSON.stringify({ success: true, redirect: "/funding" }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
     } catch (e: unknown) {
       console.error("Error setting default provider:", e);
-      return new Response("Failed to set default provider", { status: 500 });
+      return new Response(
+        JSON.stringify({ error: "Failed to set default provider" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
-  }
-
-  // Payment Endpoints
+  } // Payment Endpoints
   else if (req.method === "POST" && pathname === "/createPayLink") {
     return await handleCreatePayLink(req, uid);
   } else if (req.method === "GET" && pathname === "/balance") {
@@ -642,10 +747,12 @@ async function handler(req: Request): Promise<Response | any> {
     return new Response("Not Found", { status: 404 });
   }
 }
-
 // Payment Handlers
 
-async function handleCreatePayLink(req: Request, uid: string): Promise<Response> {
+async function handleCreatePayLink(
+  req: Request,
+  uid: string,
+): Promise<Response> {
   try {
     const headers = req.headers;
     let provider = null;
@@ -677,9 +784,10 @@ async function handleCreatePayLink(req: Request, uid: string): Promise<Response>
       return new Response("No provider specified or found", { status: 400 });
     }
 
-    const formData = await req.formData();
-    const amountStr = formData.get("amount")?.toString();
-    const memo = formData.get("memo")?.toString() || "";
+    // Parse the request body as JSON
+    const body = await req.json();
+    const amountStr = body.amount;
+    const memo = body.memo || "";
 
     const amount = parseFloat(amountStr || "0");
     if (isNaN(amount) || amount <= 0) {
@@ -795,8 +903,8 @@ async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
       return new Response("No provider specified or found", { status: 400 });
     }
 
-    const formData = await req.formData();
-    const paymentRequest = formData.get("paymentRequest")?.toString();
+    const body = await req.json();
+    const paymentRequest = body.paymentRequest?.toString();
 
     // Log the received paymentRequest
     console.log(`Received paymentRequest: ${paymentRequest}`);
@@ -832,8 +940,10 @@ async function handlePayInvoice(req: Request, uid: string): Promise<Response> {
   }
 }
 
-
-async function handleGetTransactions(req: Request, uid: string): Promise<Response> {
+async function handleGetTransactions(
+  req: Request,
+  uid: string,
+): Promise<Response> {
   try {
     const headers = req.headers;
     let provider = null;
@@ -912,7 +1022,9 @@ async function handleCheckStatus(req: Request, uid: string): Promise<Response> {
     const chargeId = url.searchParams.get("chargeId");
 
     if (!chargeId) {
-      return new Response("chargeId query parameter is required", { status: 400 });
+      return new Response("chargeId query parameter is required", {
+        status: 400,
+      });
     }
 
     // Initialize the appropriate payment service
@@ -926,7 +1038,7 @@ async function handleCheckStatus(req: Request, uid: string): Promise<Response> {
     }
 
     // Check payment status
-    let status: string = '';
+    let status: string = "";
     if (provider.provider === "lnbits") {
       status = await paymentService.checkStatus(chargeId);
     } else if (provider.provider === "opennode") {
